@@ -12,6 +12,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <string.h>
+#include <signal.h>
 
 #define str_ std::string
 #define vec_int_ std::vector<int>
