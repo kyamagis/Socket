@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <map>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,10 +11,12 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
- #include <fcntl.h>
+#include <fcntl.h>
 
 #define str_ std::string
 #define vec_int_ std::vector<int>
+#define	map_fd_response_ std::map<int, str_>
+#define map_ite_ std::map<int, str_>::iterator
 #define LOCAL_HOST 2130706433 //127.0.0.1
 #define MAX_QUEQUE 5
 
@@ -162,14 +165,10 @@ void	createClntSocket(int sorv_socket, fd_set *master_readfds, int *max_descripo
 	}
 }
 
-void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, int *max_descripotor, str_ &entity_body)
+void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, int *max_descripotor, map_fd_response_ &fd_response)
 {
-	str_	request_message = "HTTP/1.1 200 OK\r\n";
-	request_message += "Connection: close\r\n";
-	request_message += "Content-Type: text/plane\r\n";
-	request_message += "Content-Length: " + std::to_string(entity_body.size()) + "\r\n\r\n";
-	request_message += entity_body;
-	ssize_t	sent_len = send(clnt_socket, request_message.c_str(), request_message.size(), MSG_DONTWAIT);
+	ssize_t	sent_len = send(clnt_socket, fd_response[clnt_socket].c_str(), fd_response[clnt_socket].size(), MSG_DONTWAIT);
+
 	if (sent_len == -1)
 	{
 		if (errno != EWOULDBLOCK)
@@ -177,37 +176,69 @@ void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writef
 			exitWithPutError("send() failed");
 		}
 	}
-	FD_CLR(clnt_socket, master_writefds);
-	while (!FD_ISSET(*max_descripotor, master_readfds) && !FD_ISSET(*max_descripotor, master_writefds))
+	if (sent_len < 1 || fd_response[clnt_socket].size() == (size_t)sent_len)
 	{
-		*max_descripotor -= 1;
+		FD_CLR(clnt_socket, master_writefds);
+		while (!FD_ISSET(*max_descripotor, master_readfds) && !FD_ISSET(*max_descripotor, master_writefds))
+		{
+			*max_descripotor -= 1;
+		}
+		x_close(clnt_socket);
+		fd_response[clnt_socket].erase();
 	}
-	x_close(clnt_socket);
-	entity_body.clear();
+	else if ((size_t)sent_len < fd_response[clnt_socket].size())
+	{
+		fd_response[clnt_socket] = fd_response[clnt_socket].substr(0, sent_len);
+	}
 }
 
-void	recvRequest(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, str_ &entity_body)
+str_	makeResponseMessage(str_ &entity_body)
+{
+	str_	response_message = "HTTP/1.1 200 OK\r\n";
+	response_message += "Connection: close\r\n";
+	response_message += "Content-Type: text/plane\r\n";
+	response_message += "Content-Length: " + std::to_string(entity_body.size()) + "\r\n\r\n";
+	response_message += entity_body;
+
+	return response_message;
+}
+
+bool	recvRequest(int clnt_socket, char *buffer)
 {
 	ssize_t recved_len = 1;
-	char	buffer[1024];
 
-	memset(buffer, '\0', sizeof(buffer));
-	recved_len = recv(clnt_socket, buffer, sizeof(buffer), MSG_DONTWAIT);
+	recved_len = recv(clnt_socket, buffer, 1024, MSG_DONTWAIT);
 	if (recved_len == -1)
 	{
 		if (errno != EWOULDBLOCK)
 		{
 			exitWithPutError("accept() failed");
 		}
-		return ;
+		return false;
 	}
+	return true;
+}
+
+void	storeRequestToMap(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, map_fd_response_ &fd_response)
+{
+	char	buffer[1024];
+
+	memset(buffer, '\0', sizeof(buffer));
+	if (!recvRequest(clnt_socket, buffer))
+		return ;
+
+	map_ite_	ite = fd_response.find(clnt_socket);
+	if (ite == fd_response.end())
+	{
+		fd_response.insert(std::pair<int, str_>(clnt_socket, ""));
+	}
+	fd_response[clnt_socket] += buffer;
 	if (buffer[1023] == '\0')
 	{
 		FD_CLR(clnt_socket, master_readfds);
 		FD_SET(clnt_socket, master_writefds);
-		buffer[recved_len] = '\0';
+		fd_response[clnt_socket] = makeResponseMessage(fd_response[clnt_socket]);
 	}
-	entity_body += buffer;
 }
 
 void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
@@ -218,8 +249,8 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 	fd_set	writefds;
 	int		max_descripotor = initMasterReadfds(vec_serv_socket, &master_readfds);
 	int		ready;
-	str_	entity_body;
-	struct timeval	timeout;
+	struct timeval		timeout;
+	map_fd_response_	fd_response;
 
 	FD_ZERO(&master_writefds);
 	while(true)
@@ -227,7 +258,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 		memcpy(&writefds, &master_writefds, sizeof(master_writefds));
 		memcpy(&readfds, &master_readfds, sizeof(master_readfds));
 		timeout.tv_sec  = 0;
-		timeout.tv_usec = 0;
+		timeout.tv_usec = 100;
 		ready = select(max_descripotor + 1, &readfds, &writefds, NULL, &timeout);
 		if (ready == 0)
 		{
@@ -242,7 +273,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 				if (FD_ISSET(fd, &writefds))
 				{
 					--ready;
-					sendResponse(fd, &master_readfds, &master_writefds, &max_descripotor, entity_body);
+					sendResponse(fd, &master_readfds, &master_writefds, &max_descripotor, fd_response);
 					std::cout << "clnt_socket: " <<  fd << ", max_descripotor: " << max_descripotor << std::endl;
 				}
 				else if (FD_ISSET(fd, &readfds))
@@ -254,7 +285,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 					}
 					else
 					{
-						recvRequest(fd, &master_readfds, &master_writefds, entity_body);
+						storeRequestToMap(fd, &master_readfds, &master_writefds, fd_response);
 					}
 				}
 			}
