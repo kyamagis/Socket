@@ -162,7 +162,7 @@ void	createClntSocket(int sorv_socket, fd_set *master_readfds, int *max_descripo
 	}
 }
 
-void	sendResponse(int clnt_socket, fd_set *master_writefds, str_ &entity_body)
+void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, int *max_descripotor, str_ &entity_body)
 {
 	str_	request_message = "HTTP/1.1 200 OK\r\n";
 	request_message += "Connection: close\r\n";
@@ -178,6 +178,11 @@ void	sendResponse(int clnt_socket, fd_set *master_writefds, str_ &entity_body)
 		}
 	}
 	FD_CLR(clnt_socket, master_writefds);
+	while (!FD_ISSET(*max_descripotor, master_readfds) && !FD_ISSET(*max_descripotor, master_writefds))
+	{
+		*max_descripotor -= 1;
+		std::cout << "max_descripotor: " << *max_descripotor << std::endl;
+	}
 	x_close(clnt_socket);
 	entity_body.clear();
 }
@@ -238,7 +243,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 				if (FD_ISSET(fd, &writefds))
 				{
 					--ready;
-					sendResponse(fd, &master_writefds, entity_body);
+					sendResponse(fd, &master_readfds, &master_writefds, &max_descripotor, entity_body);
 				}
 				else if (FD_ISSET(fd, &readfds))
 				{
@@ -249,7 +254,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 					}
 					else
 					{
-						std::cout << "clnt_socket: " <<  fd << ", max_descripotor: " << max_descripotor << std::endl;
+						//std::cout << "clnt_socket: " <<  fd << ", max_descripotor: " << max_descripotor << std::endl;
 						recvRequest(fd, &master_readfds, &master_writefds, entity_body);
 					}
 				}
@@ -272,4 +277,5 @@ int	main(int argc, char **argv)
 
 // c++ -Wall -Wextra -Werror socket.cpp && ./a.out 8080 8081 8082
 // http://localhost:8080
-// https://github.com/kyamagis/Socket.git
+// curl -i -X GET localhost:8080/
+// https://github.com/kyamagis/Socket.git master
