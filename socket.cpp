@@ -19,6 +19,7 @@
 #define map_ite_ std::map<int, str_>::iterator
 #define LOCAL_HOST 2130706433 //127.0.0.1
 #define MAX_QUEQUE 5
+#define debug(str) std::cout << str << std::endl
 
 void	putError(str_ error_str)
 {
@@ -200,11 +201,14 @@ str_	makeResponseMessage(str_ &entity_body)
 	return response_message;
 }
 
+#define BUFF_SIZE 10
+
 bool	recvRequest(int clnt_socket, char *buffer)
 {
 	ssize_t recved_len = 1;
 
-	recved_len = recv(clnt_socket, buffer, 1024, MSG_DONTWAIT);
+	memset(buffer, '\0', BUFF_SIZE + 1);
+	recved_len = recv(clnt_socket, buffer, BUFF_SIZE, MSG_DONTWAIT);
 	if (recved_len == -1)
 	{
 		if (errno != EWOULDBLOCK)
@@ -218,9 +222,8 @@ bool	recvRequest(int clnt_socket, char *buffer)
 
 void	storeRequestToMap(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, map_fd_response_ &fd_response)
 {
-	char	buffer[1024];
+	char	buffer[BUFF_SIZE + 1];
 
-	memset(buffer, '\0', sizeof(buffer));
 	if (!recvRequest(clnt_socket, buffer))
 		return ;
 
@@ -230,7 +233,7 @@ void	storeRequestToMap(int clnt_socket, fd_set *master_readfds, fd_set *master_w
 		fd_response.insert(std::pair<int, str_>(clnt_socket, ""));
 	}
 	fd_response[clnt_socket] += buffer;
-	if (buffer[1023] == '\0')
+	if (buffer[BUFF_SIZE - 1] == '\0')
 	{
 		FD_CLR(clnt_socket, master_readfds);
 		FD_SET(clnt_socket, master_writefds);
