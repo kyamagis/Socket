@@ -49,7 +49,6 @@ int	x_bind(int serv_socket, struct sockaddr_in addr, socklen_t addr_len)
 {
 	if (bind(serv_socket, (struct sockaddr *)&addr, addr_len) == -1)
 	{
-		putError("bind() failed");
 		x_close(serv_socket);
 		return -1;
 	}
@@ -107,10 +106,15 @@ vec_int_	createVecServSocket(int num_of_ports, char **argv)
 	for (int i = 0; i < num_of_ports; i++)
 	{
 		serv_socket = createServSocket(atoi(argv[i]));
-		if (serv_socket != -1)
+		std::cout << "port: " << atoi(argv[i]);
+		if (serv_socket == -1)
+		{
+			std::cout << ", bind() failed: " << strerror(errno) << std::endl;
+		}
+		else if (serv_socket != -1)
 		{
 			vec_serv_socket.push_back(serv_socket);
-			std::cout << "fd: " << serv_socket << ", port: " << atoi(argv[i]) << std::endl;
+			std::cout << ", fd: " << serv_socket << std::endl;
 		}
 	}
 	return vec_serv_socket;
@@ -173,7 +177,6 @@ void	sendResponse(int clnt_socket, fd_set *master_writefds, str_ &entity_body)
 			exitWithPutError("send() failed");
 		}
 	}
-	//std::cout << "send: " << request_message << std::endl;
 	FD_CLR(clnt_socket, master_writefds);
 	x_close(clnt_socket);
 	entity_body.clear();
@@ -235,7 +238,6 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 				if (FD_ISSET(fd, &writefds))
 				{
 					--ready;
-					//std::cout << "clnt_socket: " <<  fd << ", max_descripotor: " << max_descripotor << std::endl;
 					sendResponse(fd, &master_writefds, entity_body);
 				}
 				else if (FD_ISSET(fd, &readfds))
@@ -269,3 +271,4 @@ int	main(int argc, char **argv)
 }
 
 // c++ -Wall -Wextra -Werror socket.cpp && ./a.out 8080 8081 8082
+// http://localhost:8080
