@@ -169,12 +169,9 @@ void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writef
 {
 	ssize_t	sent_len = send(clnt_socket, fd_response[clnt_socket].c_str(), fd_response[clnt_socket].size(), MSG_DONTWAIT);
 
-	if (sent_len == -1)
+	if (sent_len == -1 && errno != EWOULDBLOCK)
 	{
-		if (errno != EWOULDBLOCK)
-		{
-			exitWithPutError("send() failed");
-		}
+		exitWithPutError("send() failed");
 	}
 	if (sent_len < 1 || fd_response[clnt_socket].size() == (size_t)sent_len)
 	{
