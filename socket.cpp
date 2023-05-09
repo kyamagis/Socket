@@ -181,7 +181,6 @@ void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writef
 	while (!FD_ISSET(*max_descripotor, master_readfds) && !FD_ISSET(*max_descripotor, master_writefds))
 	{
 		*max_descripotor -= 1;
-		std::cout << "max_descripotor: " << *max_descripotor << std::endl;
 	}
 	x_close(clnt_socket);
 	entity_body.clear();
@@ -244,6 +243,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 				{
 					--ready;
 					sendResponse(fd, &master_readfds, &master_writefds, &max_descripotor, entity_body);
+					std::cout << "clnt_socket: " <<  fd << ", max_descripotor: " << max_descripotor << std::endl;
 				}
 				else if (FD_ISSET(fd, &readfds))
 				{
@@ -254,7 +254,6 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 					}
 					else
 					{
-						//std::cout << "clnt_socket: " <<  fd << ", max_descripotor: " << max_descripotor << std::endl;
 						recvRequest(fd, &master_readfds, &master_writefds, entity_body);
 					}
 				}
