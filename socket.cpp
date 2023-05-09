@@ -214,6 +214,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 	str_	entity_body;
 	struct timeval	timeout;
 
+	FD_ZERO(&master_writefds);
 	while(true)
 	{
 		memcpy(&writefds, &master_writefds, sizeof(master_writefds));
