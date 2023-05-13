@@ -38,7 +38,8 @@ int	x_socket(int domain, int type, int protocol)
 	int	serv_socket = socket(domain, type, protocol);
 	if (serv_socket == -1)
 	{
-		exitWithPutError("socket() failed");
+		putError("socket() failed");
+		return -1;
 	}
 	return serv_socket;
 }
@@ -48,6 +49,27 @@ void	x_close(int serv_socket)
 	int error_flg = close(serv_socket);
 	if (error_flg == -1)
 		exitWithPutError("close() failed");
+}
+
+void	setSockaddr_in(int port, struct sockaddr_in *addr)
+{
+	memset(addr, 0, sizeof(*addr));
+	addr->sin_addr.s_addr		= htonl(LOCAL_HOST);
+	addr->sin_family			= AF_INET;
+	addr->sin_port				= htons(port);
+}
+
+int	x_setsockopt(int serv_socket, int level, int optname)
+{
+	int	option_value = 1;
+
+	if (setsockopt(serv_socket, level, optname, (const char *)&option_value, sizeof(option_value)) == -1)
+	{
+		putError("setsockopt() failed");
+		x_close(serv_socket);
+		return -1;
+	}
+	return 0;
 }
 
 int	x_bind(int serv_socket, struct sockaddr_in addr, socklen_t addr_len)
@@ -60,46 +82,48 @@ int	x_bind(int serv_socket, struct sockaddr_in addr, socklen_t addr_len)
 	return 0;
 }
 
-void	x_listen(int serv_socket, int backlog)
+int	x_fcntl(int fd, int cmd, int flg)
+{
+	if (fcntl(fd, cmd, flg) == -1)
+	{
+		putError("fcntl() failed");
+		x_close(fd);
+		return -1;
+	}
+	return 0;
+}
+
+int	x_listen(int serv_socket, int backlog)
 {
 	if (listen(serv_socket, backlog) == -1)
 	{
-		exitWithPutError("listen() failed");
+		putError("listen() failed");
+		x_close(serv_socket);
+		return -1;
 	}
-}
-
-void	setSockaddr_in(int port, struct sockaddr_in *addr)
-{
-	memset(addr, 0, sizeof(*addr));
-	addr->sin_addr.s_addr		= htonl(LOCAL_HOST);
-	addr->sin_family			= AF_INET;
-	addr->sin_port				= htons(port);
-}
-
-void	x_setsockopt(int serv_socket)
-{
-	int	option_value = 1;
-
-	if (setsockopt(serv_socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&option_value, sizeof(option_value)) == -1)
-	{
-		exitWithPutError("setsockopt() failed");
-	}
+	return 0;
 }
 
 int	createServSocket(int port)
 {
-	int	serv_socket = x_socket(AF_INET, SOCK_STREAM, 0);
 	struct sockaddr_in	addr;
 
-	setSockaddr_in(port, &addr);
-	x_setsockopt(serv_socket);
-	int	error_flg = x_bind(serv_socket, addr, sizeof(addr));
-	if (error_flg == -1)
-	{
+	int serv_socket = x_socket(AF_INET, SOCK_STREAM, 0);
+	if (serv_socket == -1)
 		return -1;
-	}
-	fcntl(serv_socket, F_SETFL, O_NONBLOCK);
-	x_listen(serv_socket, SOMAXCONN);
+	setSockaddr_in(port, &addr);
+	int	error_flg = x_setsockopt(serv_socket, SOL_SOCKET, SO_REUSEADDR);
+	if (error_flg == -1)
+		return -1;
+	error_flg = x_bind(serv_socket, addr, sizeof(addr));
+	if (error_flg == -1)
+		return -1;
+	error_flg = x_fcntl(serv_socket, F_SETFL, O_NONBLOCK);
+	if (error_flg == -1)
+		return -1;
+	error_flg = x_listen(serv_socket, SOMAXCONN);
+	if (error_flg == -1)
+		return -1;
 	return serv_socket;
 }
 
