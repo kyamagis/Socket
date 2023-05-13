@@ -20,7 +20,6 @@
 #define	map_fd_response_ std::map<int, str_>
 #define map_ite_ std::map<int, str_>::iterator
 #define LOCAL_HOST 2130706433 //127.0.0.1
-#define MAX_QUEQUE 128
 #define debug(str) std::cout << str << std::endl
 
 void	putError(str_ error_str)
@@ -100,7 +99,7 @@ int	createServSocket(int port)
 		return -1;
 	}
 	fcntl(serv_socket, F_SETFL, O_NONBLOCK);
-	x_listen(serv_socket, MAX_QUEQUE);
+	x_listen(serv_socket, SOMAXCONN);
 	return serv_socket;
 }
 
