@@ -20,7 +20,7 @@
 #define	map_fd_response_ std::map<int, str_>
 #define map_ite_ std::map<int, str_>::iterator
 #define LOCAL_HOST 2130706433 //127.0.0.1
-#define MAX_QUEQUE 5
+#define MAX_QUEQUE 128
 #define debug(str) std::cout << str << std::endl
 
 void	putError(str_ error_str)
@@ -203,7 +203,7 @@ str_	makeResponseMessage(str_ &entity_body)
 	return response_message;
 }
 
-#define BUFF_SIZE 10
+#define BUFF_SIZE 100000
 
 bool	recvRequest(int clnt_socket, char *buffer)
 {
@@ -260,7 +260,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 		memcpy(&writefds, &master_writefds, sizeof(master_writefds));
 		memcpy(&readfds, &master_readfds, sizeof(master_readfds));
 		timeout.tv_sec  = 0;
-		timeout.tv_usec = 100;
+		timeout.tv_usec = 200;
 		ready = select(max_descripotor + 1, &readfds, &writefds, NULL, &timeout);
 		if (ready == 0)
 		{
@@ -307,6 +307,7 @@ int	main(int argc, char **argv)
 	IOMultiplexingLoop(vec_serv_socket);
 }
 
+// siege -b -t 10s http://localhost:8080
 // c++ -Wall -Wextra -Werror socket.cpp && ./a.out 8080 8081 8082
 // http://localhost:8080
 // curl -i -X GET localhost:8080/
