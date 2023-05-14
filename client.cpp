@@ -64,12 +64,11 @@ int	createClntSocket(int serv_port)
 
 	int clnt_socket = x_socket(AF_INET, SOCK_STREAM, 0);
 	setSockaddr_in(serv_port, &serv_addr);
-	// fcntl(clnt_socket, F_SETFL, O_NONBLOCK);
 	x_connect(clnt_socket, serv_addr);
 	return clnt_socket;
 }
 
-#define BUFF_SIZE 1024
+#define BUFF_SIZE 10240
 
 void	recvAll(int clnt_socket)
 {
@@ -77,16 +76,22 @@ void	recvAll(int clnt_socket)
 	ssize_t len = 1;
 	str_	recved_str;
 
-	std::cout << "recv: " << std::endl;
-	while (0 < len)
+	while (true)
 	{
-		len = recv(clnt_socket, buff, BUFF_SIZE, 0);
+		len = recv(clnt_socket, buff, BUFF_SIZE, MSG_DONTWAIT);
 		if (len == -1)
-			putError("recv() faile");
-		buff[len] = '\0';
-		recved_str += buff;
+		{
+			if (errno != EWOULDBLOCK)
+				putError("recv() faile");
+		}
+		else
+		{
+			buff[len] = '\0';
+			recved_str = buff;
+			std::cout << recved_str << std::endl;
+			break ;
+		}
 	}
-	std::cout << recved_str << std::endl;
 }
 
 void	sendAll(int clnt_socket, char *buff)
@@ -117,23 +122,42 @@ void	sendDevRandom(int clnt_socket)
 	}
 }
 
+str_	makeRequestMessage()
+{
+	str_	request_message = "GET / HTTP/1.1\r\n";
+
+	request_message += "Host: localhost:443\r\n";
+	request_message += "Connection: keep-alive\r\n\r\n";
+	//request_message += "Connection: close\r\n\r\n";
+	return request_message;
+}
+
 void	IOLoop(int clnt_socket)
 {
-	str_	inputed_str;
+	str_	request_message = makeRequestMessage();
 	ssize_t	len;
 
-	while(true)
-	{
-		std::cout << "input: ";
-		std::cin >> inputed_str;
-		if (std::cin.eof())
-			return ;
-		//sendDevRandom(clnt_socket);
-		len = send(clnt_socket, inputed_str.c_str(), inputed_str.size(), 0);
-		if (len == -1)
-			putError("send() faile");
-		recvAll(clnt_socket);
-	}
+	// while(true)
+	// {
+	// 	//sendDevRandom(clnt_socket);
+	// 	//inputed_str += "\r\n";
+	// 	len = send(clnt_socket, request_message.c_str(), request_message.size(), 0);
+	// 	if (len == -1)
+	// 		putError("send() faile");
+	// 	debug(len);
+	// 	recvAll(clnt_socket);
+		
+	// }
+	len = send(clnt_socket, request_message.c_str(), request_message.size(), MSG_DONTWAIT);
+	if (len == -1)
+		putError("send() faile");
+	recvAll(clnt_socket);
+	request_message = "HTTP/1.1\r\n\r\n";
+	len = send(clnt_socket, request_message.c_str(), request_message.size(), MSG_DONTWAIT);
+	if (len == -1)
+		putError("send() faile");
+	recvAll(clnt_socket);
+	
 }
 
 int	main(int argc, char **argv)
