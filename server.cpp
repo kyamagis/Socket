@@ -106,16 +106,16 @@ int	x_listen(int serv_socket, int backlog)
 
 int	createServSocket(int port)
 {
-	struct sockaddr_in	addr;
+	struct sockaddr_in	serv_addr;
 
 	int serv_socket = x_socket(AF_INET, SOCK_STREAM, 0);
 	if (serv_socket == -1)
 		return -1;
-	setSockaddr_in(port, &addr);
+	setSockaddr_in(port, &serv_addr);
 	int	error_flg = x_setsockopt(serv_socket, SOL_SOCKET, SO_REUSEADDR);
 	if (error_flg == -1)
 		return -1;
-	error_flg = x_bind(serv_socket, addr, sizeof(addr));
+	error_flg = x_bind(serv_socket, serv_addr, sizeof(serv_addr));
 	if (error_flg == -1)
 		return -1;
 	error_flg = x_fcntl(serv_socket, F_SETFL, O_NONBLOCK);
@@ -195,6 +195,10 @@ void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writef
 {
 	ssize_t	sent_len = send(clnt_socket, fd_response[clnt_socket].c_str(), fd_response[clnt_socket].size(), MSG_DONTWAIT);
 
+	if (sent_len == -1)
+	{
+		debug("recv == -1");
+	}
 	if (sent_len == -1 && errno != EWOULDBLOCK)
 	{
 		exitWithPutError("send() failed");
@@ -243,6 +247,7 @@ bool	recvRequest(int clnt_socket, char *buffer)
 		}
 		return false;
 	}
+	debug("recv == -1");
 	return true;
 }
 
@@ -332,7 +337,7 @@ int	main(int argc, char **argv)
 }
 
 // siege -b -t 10s http://localhost:8080
-// c++ -Wall -Wextra -Werror socket.cpp && ./a.out 8080 8081 8082
+// c++ -Wall -Wextra -Werror server.cpp -o server && ./server 8080 8081 8082
 // http://localhost:8080
 // curl -i -X GET localhost:8080/
 // https://github.com/kyamagis/Socket.git master
