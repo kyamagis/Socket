@@ -202,9 +202,10 @@ void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writef
 	if (sent_len < 1 || fd_response[clnt_socket].size() == (size_t)sent_len)
 	{
 		FD_CLR(clnt_socket, master_writefds);
-		while (!FD_ISSET(*max_descripotor, master_readfds) && !FD_ISSET(*max_descripotor, master_writefds))
-		{
-			*max_descripotor -= 1;
+		if (clnt_socket == *max_descripotor)
+		{	
+			while (!FD_ISSET(*max_descripotor, master_readfds) && !FD_ISSET(*max_descripotor, master_writefds))
+				*max_descripotor -= 1;
 		}
 		x_close(clnt_socket);
 		fd_response[clnt_socket].erase();
