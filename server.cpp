@@ -421,4 +421,4 @@ int	main(int argc, char **argv)
 // c++ -Wall -Wextra -Werror server.cpp -o server && ./server 8080 8081 8082
 // http://localhost:8080
 // curl -i -X GET localhost:8080/
-// https://github.com/kyamagis/Socket.git master
+// https://github.com/kyamagis/Socket.git persistent_connection
