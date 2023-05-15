@@ -17,10 +17,15 @@
 
 #define str_ std::string
 #define vec_int_ std::vector<int>
-#define	map_fd_response_ std::map<int, str_>
-#define map_ite_ std::map<int, str_>::iterator
+#define	map_fd_data_ std::map<int, t_data>
+#define map_ite_ std::map<int, t_data>::iterator
 #define LOCAL_HOST 2130706433 //127.0.0.1
 #define debug(str) std::cout << str << std::endl
+
+typedef struct s_data
+{
+	str_	response_message;
+}	t_data;
 
 void	putError(str_ error_str)
 {
@@ -191,9 +196,11 @@ void	createClntSocket(int sorv_socket, fd_set *master_readfds, int *max_descripo
 	}
 }
 
-void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, int *max_descripotor, map_fd_response_ &fd_response)
+#define RESPONSE_MESSAGE fd_data[clnt_socket].response_message
+
+void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, int *max_descripotor, map_fd_data_ &fd_data)
 {
-	ssize_t	sent_len = send(clnt_socket, fd_response[clnt_socket].c_str(), fd_response[clnt_socket].size(), MSG_DONTWAIT);
+	ssize_t	sent_len = send(clnt_socket, RESPONSE_MESSAGE.c_str(), RESPONSE_MESSAGE.size(), MSG_DONTWAIT);
 
 	if (sent_len == -1)
 	{
@@ -203,7 +210,7 @@ void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writef
 	{
 		exitWithPutError("send() failed");
 	}
-	if (sent_len < 1 || fd_response[clnt_socket].size() == (size_t)sent_len)
+	if (sent_len < 1 || RESPONSE_MESSAGE.size() == (size_t)sent_len)
 	{
 		FD_CLR(clnt_socket, master_writefds);
 		if (clnt_socket == *max_descripotor)
@@ -212,11 +219,11 @@ void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writef
 				*max_descripotor -= 1;
 		}
 		x_close(clnt_socket);
-		fd_response[clnt_socket].erase();
+		RESPONSE_MESSAGE.erase();
 	}
-	else if ((size_t)sent_len < fd_response[clnt_socket].size())
+	else if ((size_t)sent_len < RESPONSE_MESSAGE.size())
 	{
-		fd_response[clnt_socket] = fd_response[clnt_socket].substr(0, sent_len);
+		RESPONSE_MESSAGE = RESPONSE_MESSAGE.substr(0, sent_len);
 	}
 }
 
@@ -251,24 +258,24 @@ bool	recvRequest(int clnt_socket, char *buffer)
 	return true;
 }
 
-void	storeRequestToMap(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, map_fd_response_ &fd_response)
+void	storeRequestToMap(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, map_fd_data_ &fd_data)
 {
 	char	buffer[BUFF_SIZE + 1];
 
 	if (!recvRequest(clnt_socket, buffer))
 		return ;
 
-	map_ite_	ite = fd_response.find(clnt_socket);
-	if (ite == fd_response.end())
+	map_ite_	ite = fd_data.find(clnt_socket);
+	if (ite == fd_data.end())
 	{
-		fd_response.insert(std::pair<int, str_>(clnt_socket, ""));
+		fd_data.insert(std::pair<int, t_data>(clnt_socket, t_data{""}));
 	}
-	fd_response[clnt_socket] += buffer;
+	RESPONSE_MESSAGE += buffer;
 	if (buffer[BUFF_SIZE - 1] == '\0')
 	{
 		FD_CLR(clnt_socket, master_readfds);
 		FD_SET(clnt_socket, master_writefds);
-		fd_response[clnt_socket] = makeResponseMessage(fd_response[clnt_socket]);
+		RESPONSE_MESSAGE = makeResponseMessage(RESPONSE_MESSAGE);
 	}
 }
 
@@ -281,7 +288,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 	int		max_descripotor = initMasterReadfds(vec_serv_socket, &master_readfds);
 	int		ready;
 	struct timeval		timeout;
-	map_fd_response_	fd_response;
+	map_fd_data_		fd_data;
 
 	FD_ZERO(&master_writefds);
 	while(true)
@@ -304,7 +311,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 				if (FD_ISSET(fd, &writefds))
 				{
 					--ready;
-					sendResponse(fd, &master_readfds, &master_writefds, &max_descripotor, fd_response);
+					sendResponse(fd, &master_readfds, &master_writefds, &max_descripotor, fd_data);
 					std::cout << "clnt_socket: " <<  fd << ", max_descripotor: " << max_descripotor << std::endl;
 				}
 				else if (FD_ISSET(fd, &readfds))
@@ -316,7 +323,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 					}
 					else
 					{
-						storeRequestToMap(fd, &master_readfds, &master_writefds, fd_response);
+						storeRequestToMap(fd, &master_readfds, &master_writefds, fd_data);
 					}
 				}
 			}
