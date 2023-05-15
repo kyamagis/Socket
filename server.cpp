@@ -56,11 +56,15 @@ int	x_socket(int domain, int type, int protocol)
 	return serv_socket;
 }
 
-void	x_close(int serv_socket)
+void	x_close(int serv_socket, int line)
 {
 	int error_flg = close(serv_socket);
 	if (error_flg == -1)
-		exitWithPutError("close() failed");
+	{
+		std::cerr << "close() failed" << ": " << strerror(errno) << " " << line << std::endl;
+		std::exit(EXIT_FAILURE);
+	}
+	
 }
 
 void	setSockaddr_in(int port, struct sockaddr_in *addr)
@@ -78,7 +82,7 @@ int	x_setsockopt(int serv_socket, int level, int optname)
 	if (setsockopt(serv_socket, level, optname, (const char *)&option_value, sizeof(option_value)) == -1)
 	{
 		putError("setsockopt() failed");
-		x_close(serv_socket);
+		x_close(serv_socket, __LINE__);
 		return -1;
 	}
 	return 0;
@@ -88,7 +92,7 @@ int	x_bind(int serv_socket, struct sockaddr_in addr, socklen_t addr_len)
 {
 	if (bind(serv_socket, (struct sockaddr *)&addr, addr_len) == -1)
 	{
-		x_close(serv_socket);
+		x_close(serv_socket, __LINE__);
 		return -1;
 	}
 	return 0;
@@ -99,7 +103,7 @@ int	x_fcntl(int fd, int cmd, int flg)
 	if (fcntl(fd, cmd, flg) == -1)
 	{
 		putError("fcntl() failed");
-		x_close(fd);
+		x_close(fd, __LINE__);
 		return -1;
 	}
 	return 0;
@@ -110,7 +114,7 @@ int	x_listen(int serv_socket, int backlog)
 	if (listen(serv_socket, backlog) == -1)
 	{
 		putError("listen() failed");
-		x_close(serv_socket);
+		x_close(serv_socket, __LINE__);
 		return -1;
 	}
 	return 0;
@@ -212,7 +216,7 @@ void	closeFdWithFD_CLR(int fd, map_fd_data_ fd_data, int *max_descripotor, \
 {
 	FD_CLR(fd, master_readfds);
 	FD_CLR(fd, master_writefds);
-	x_close(fd);
+	x_close(fd, __LINE__);
 	fd_data.erase(fd);
 	if (*max_descripotor == fd)
 	{
@@ -240,22 +244,24 @@ void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writef
 	}
 	if (sent_len < 1 || RESPONSE_MESSAGE.size() == (size_t)sent_len)
 	{
-		FD_CLR(clnt_socket, master_writefds);
-		FD_SET(clnt_socket, master_readfds);
-		RESPONSE_MESSAGE.clear();
-
-		if (0 < *max_descripotor)
+		if (RESPONSE_MESSAGE.find("\r\nConnection: keep-alive\r\n") != str_::npos)
+		{
+			FD_CLR(clnt_socket, master_writefds);
+			//FD_SET(clnt_socket, master_readfds);
+			RESPONSE_MESSAGE.clear();
 			return ;
-		if (clnt_socket == *max_descripotor)
-		{	
-			while (!FD_ISSET(*max_descripotor, master_readfds) && !FD_ISSET(*max_descripotor, master_writefds))
-				*max_descripotor -= 1;
 		}
-		// fd_data.erase(clnt_socket);
-		// x_close(clnt_socket);
-
-		
-
+		else
+		{
+			FD_CLR(clnt_socket, master_writefds);
+			if (clnt_socket == *max_descripotor)
+			{	
+				while (!FD_ISSET(*max_descripotor, master_readfds) && !FD_ISSET(*max_descripotor, master_writefds))
+					*max_descripotor -= 1;
+			}
+			fd_data.erase(clnt_socket);
+			x_close(clnt_socket, __LINE__);
+		}
 	}
 	else if ((size_t)sent_len < RESPONSE_MESSAGE.size())
 	{
@@ -308,7 +314,8 @@ void	storeRequestToMap(int clnt_socket, fd_set *master_readfds, fd_set *master_w
 	RESPONSE_MESSAGE += buffer;
 	if (buffer[BUFF_SIZE - 1] == '\0')
 	{
-		FD_CLR(clnt_socket, master_readfds);
+		(void)master_readfds;
+		//FD_CLR(clnt_socket, master_readfds);
 		FD_SET(clnt_socket, master_writefds);
 		RESPONSE_MESSAGE = makeResponseMessage(RESPONSE_MESSAGE);
 	}
@@ -358,14 +365,15 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 			++not_ready_loop_count;
 			if (not_ready_loop_count == 1000)
 			{
-				debug("ALL close");
-				for (map_fd_data_ite_ ite = fd_data.begin(); ite != fd_data.end(); ite++)
-				{
-					x_close(ite->first);
-				}
-				max_descripotor = initMasterReadfds(vec_serv_socket, &master_readfds);
-				FD_ZERO(&master_writefds);
-				fd_data.clear();
+				// debug("ALL close");
+				// for (map_fd_data_ite_ ite = fd_data.begin(); ite != fd_data.end(); ite++)
+				// {
+				// 	debug(ite->first);
+				// 	x_close(ite->first, __LINE__);
+				// }
+				// max_descripotor = initMasterReadfds(vec_serv_socket, &master_readfds);
+				// FD_ZERO(&master_writefds);
+				// fd_data.clear();
 				not_ready_loop_count = 0;
 			}
 			continue ;
@@ -383,7 +391,7 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 					sendResponse(fd, &master_readfds, &master_writefds, &max_descripotor, fd_data);
 					std::cout << "clnt_socket: " <<  fd << ", max_descripotor: " << max_descripotor << std::endl;
 				}
-				else if (FD_ISSET(fd, &readfds))
+				if (FD_ISSET(fd, &readfds))
 				{
 					if (containsListeningSocket(fd, vec_serv_socket))
 					{
@@ -397,8 +405,8 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 				}
 				else
 				{
-					countNotReadyAndCLoseAfd(fd, fd_data, &max_descripotor, \
-											&master_readfds, &master_writefds);
+					/* countNotReadyAndCLoseAfd(fd, fd_data, &max_descripotor, \
+											&master_readfds, &master_writefds); */
 				}
 			}
 		}
