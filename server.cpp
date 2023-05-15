@@ -17,10 +17,22 @@
 
 #define str_ std::string
 #define vec_int_ std::vector<int>
-#define	map_fd_response_ std::map<int, str_>
-#define map_ite_ std::map<int, str_>::iterator
+#define	map_fd_data_ std::map<int, t_fd_data>
+#define map_fd_data_ite_ std::map<int, t_fd_data>::iterator
+
+#define RECV_SEND_COUNT 0
+#define NOT_REDY_COUNT 1
 #define LOCAL_HOST 2130706433 //127.0.0.1
 #define debug(str) std::cout << str << std::endl
+
+typedef struct s_fd_data
+{
+	str_	response_message;
+	int		recv_send_count;
+	int		not_redy_count;
+}	t_fd_data;
+
+
 
 void	putError(str_ error_str)
 {
@@ -171,12 +183,13 @@ bool	containsListeningSocket(int fd, vec_int_ vec_serv_socket)
 	return false;
 }
 
-void	createClntSocket(int sorv_socket, fd_set *master_readfds, int *max_descripotor)
+void	createClntSocket(int serv_socket, fd_set *master_readfds, int *max_descripotor, map_fd_data_ &fd_data)
 {
 	int	clnt_socket;
+
 	while(true)
 	{
-		clnt_socket = accept(sorv_socket, NULL, NULL);
+		clnt_socket = accept(serv_socket, NULL, NULL);
 		if (clnt_socket == -1)
 		{
 			if (errno != EWOULDBLOCK)
@@ -185,38 +198,68 @@ void	createClntSocket(int sorv_socket, fd_set *master_readfds, int *max_descripo
 			}
 			return ;
 		}
+		fd_data[clnt_socket].response_message.clear();
+		fd_data[clnt_socket].not_redy_count = 0;
+		fd_data[clnt_socket].recv_send_count = 0;
 		FD_SET(clnt_socket, master_readfds);
 		if (*max_descripotor < clnt_socket)
 			*max_descripotor = clnt_socket;
 	}
 }
 
-void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, int *max_descripotor, map_fd_response_ &fd_response)
+void	closeFdWithFD_CLR(int fd, map_fd_data_ fd_data, int *max_descripotor, \
+								fd_set *master_readfds, fd_set *master_writefds)
 {
-	ssize_t	sent_len = send(clnt_socket, fd_response[clnt_socket].c_str(), fd_response[clnt_socket].size(), MSG_DONTWAIT);
-
-	if (sent_len == -1)
+	FD_CLR(fd, master_readfds);
+	FD_CLR(fd, master_writefds);
+	x_close(fd);
+	fd_data.erase(fd);
+	if (*max_descripotor == fd)
 	{
-		debug("recv == -1");
+		while (!FD_ISSET(*max_descripotor, master_readfds) && \
+				!FD_ISSET(*max_descripotor, master_writefds))
+			*max_descripotor -= 1;
 	}
+}
+
+#define RESPONSE_MESSAGE fd_data[clnt_socket].response_message
+
+void	sendResponse(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, int *max_descripotor, map_fd_data_ &fd_data)
+{
+	ssize_t	sent_len = send(clnt_socket, RESPONSE_MESSAGE.c_str(), RESPONSE_MESSAGE.size(), MSG_DONTWAIT);
+
 	if (sent_len == -1 && errno != EWOULDBLOCK)
 	{
-		exitWithPutError("send() failed");
+		closeFdWithFD_CLR(clnt_socket, fd_data, max_descripotor, \
+								master_readfds, master_writefds);
+		return ;
 	}
-	if (sent_len < 1 || fd_response[clnt_socket].size() == (size_t)sent_len)
+	if (sent_len == -1)
+	{
+		debug("send == -1");
+	}
+	if (sent_len < 1 || RESPONSE_MESSAGE.size() == (size_t)sent_len)
 	{
 		FD_CLR(clnt_socket, master_writefds);
+		FD_SET(clnt_socket, master_readfds);
+		RESPONSE_MESSAGE.clear();
+
+		if (0 < *max_descripotor)
+			return ;
 		if (clnt_socket == *max_descripotor)
 		{	
 			while (!FD_ISSET(*max_descripotor, master_readfds) && !FD_ISSET(*max_descripotor, master_writefds))
 				*max_descripotor -= 1;
 		}
-		x_close(clnt_socket);
-		fd_response[clnt_socket].erase();
+		// fd_data.erase(clnt_socket);
+		// x_close(clnt_socket);
+
+		
+
 	}
-	else if ((size_t)sent_len < fd_response[clnt_socket].size())
+	else if ((size_t)sent_len < RESPONSE_MESSAGE.size())
 	{
-		fd_response[clnt_socket] = fd_response[clnt_socket].substr(0, sent_len);
+		RESPONSE_MESSAGE = RESPONSE_MESSAGE.substr(0, sent_len);
 	}
 }
 
@@ -247,28 +290,46 @@ bool	recvRequest(int clnt_socket, char *buffer)
 		}
 		return false;
 	}
-	debug("recv == -1");
 	return true;
 }
 
-void	storeRequestToMap(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, map_fd_response_ &fd_response)
+void	storeRequestToMap(int clnt_socket, fd_set *master_readfds, fd_set *master_writefds, map_fd_data_ &fd_data)
 {
 	char	buffer[BUFF_SIZE + 1];
 
 	if (!recvRequest(clnt_socket, buffer))
 		return ;
 
-	map_ite_	ite = fd_response.find(clnt_socket);
-	if (ite == fd_response.end())
+	map_fd_data_ite_	ite = fd_data.find(clnt_socket);
+	if (ite == fd_data.end())
 	{
-		fd_response.insert(std::pair<int, str_>(clnt_socket, ""));
+		fd_data.insert(std::pair<int, t_fd_data>(clnt_socket, t_fd_data{"", 0, 0}));
 	}
-	fd_response[clnt_socket] += buffer;
+	RESPONSE_MESSAGE += buffer;
 	if (buffer[BUFF_SIZE - 1] == '\0')
 	{
 		FD_CLR(clnt_socket, master_readfds);
 		FD_SET(clnt_socket, master_writefds);
-		fd_response[clnt_socket] = makeResponseMessage(fd_response[clnt_socket]);
+		RESPONSE_MESSAGE = makeResponseMessage(RESPONSE_MESSAGE);
+	}
+}
+
+
+
+void	countNotReadyAndCLoseAfd(int fd, map_fd_data_ fd_data, int *max_descripotor, \
+								fd_set *master_readfds, fd_set *master_writefds)
+{
+	map_fd_data_ite_	ite = fd_data.find(fd);
+	if (ite == fd_data.end())
+	{
+		debug(fd);
+		return ;
+	}
+	fd_data[fd].not_redy_count += 1;
+	if (fd_data[fd].not_redy_count == 10)
+	{
+		closeFdWithFD_CLR(fd, fd_data, max_descripotor, \
+							master_readfds, master_writefds);
 	}
 }
 
@@ -280,8 +341,9 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 	fd_set	writefds;
 	int		max_descripotor = initMasterReadfds(vec_serv_socket, &master_readfds);
 	int		ready;
-	struct timeval		timeout;
-	map_fd_response_	fd_response;
+	int		not_ready_loop_count = 0;
+	map_fd_data_	fd_data;
+	struct timeval	timeout;
 
 	FD_ZERO(&master_writefds);
 	while(true)
@@ -293,31 +355,50 @@ void	IOMultiplexingLoop(vec_int_ vec_serv_socket)
 		ready = select(max_descripotor + 1, &readfds, &writefds, NULL, &timeout);
 		if (ready == 0)
 		{
+			++not_ready_loop_count;
+			if (not_ready_loop_count == 1000)
+			{
+				debug("ALL close");
+				for (map_fd_data_ite_ ite = fd_data.begin(); ite != fd_data.end(); ite++)
+				{
+					x_close(ite->first);
+				}
+				max_descripotor = initMasterReadfds(vec_serv_socket, &master_readfds);
+				FD_ZERO(&master_writefds);
+				fd_data.clear();
+				not_ready_loop_count = 0;
+			}
 			continue ;
 		}
 		else if (ready == -1)
 			exitWithPutError("select() failed");
 		else
 		{
-			for (int fd = 0; fd < max_descripotor + 1 && 0 < ready; fd++)
+			not_ready_loop_count = 0;
+			for (int fd = 0; fd < max_descripotor + 1; fd++)
 			{
 				if (FD_ISSET(fd, &writefds))
 				{
-					--ready;
-					sendResponse(fd, &master_readfds, &master_writefds, &max_descripotor, fd_response);
+					fd_data[fd].not_redy_count = 0;
+					sendResponse(fd, &master_readfds, &master_writefds, &max_descripotor, fd_data);
 					std::cout << "clnt_socket: " <<  fd << ", max_descripotor: " << max_descripotor << std::endl;
 				}
 				else if (FD_ISSET(fd, &readfds))
 				{
-					--ready;
 					if (containsListeningSocket(fd, vec_serv_socket))
 					{
-						createClntSocket(fd, &master_readfds, &max_descripotor);
+						createClntSocket(fd, &master_readfds, &max_descripotor, fd_data);
 					}
 					else
 					{
-						storeRequestToMap(fd, &master_readfds, &master_writefds, fd_response);
+						fd_data[fd].not_redy_count = 0;
+						storeRequestToMap(fd, &master_readfds, &master_writefds, fd_data);
 					}
+				}
+				else
+				{
+					countNotReadyAndCLoseAfd(fd, fd_data, &max_descripotor, \
+											&master_readfds, &master_writefds);
 				}
 			}
 		}
