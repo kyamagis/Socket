@@ -2,7 +2,7 @@
 all: serv clnt
 
 serv:
-	c++ -Wall -Wextra -Werror -fsanitize=address server.cpp -o server
+	c++ -Wall -Wextra -Werror -fsanitize=address persistent_connection_server.cpp -o server
 
 clnt:
 	c++ -Wall -Wextra -Werror -fsanitize=address client.cpp -o client
